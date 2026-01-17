@@ -17,11 +17,13 @@ import matplotlib.image as mpimg
 Take the pre-formatted data and train the model on it.
 """
 
-# def read():
+os.environ['TFF_CPP_MIN_LOG_LEVEL'] = '2'
+
+rent = "/Volumes/HomeXx/compuir/hands_ml"
+
 def read_Nshuffle():
 	"""Splits and shuffles training data into train, test, and validation sets."""
-	rent = "/Volumes/HomeXx/compuir/hands_ml/FreiHAND_pub_v2"
-	with np.load(os.path.join(rent, "preprocessed.npz")) as data:
+	with np.load(os.path.join(rent, "data", "preprocessed0.npz")) as data:
 		xtrain, ytrain = data['xtrain'], data['ytrain']
 		xtest, ytest = data['xtest'], data['ytest']
 		xval, yval = data['xval'], data['yval']
@@ -36,30 +38,42 @@ def read_Nshuffle():
 
 	return shuffled_train, shuffled_test, shuffled_val
 
-def process_imgs(t_img, label): # pass images read directly to the model
+def process_imgs(t_img, label):
+	"""Reads image files and passes them straight to the model."""
 	img = tf.io.read_file(t_img) # read the image's contents
 	img = tf.io.decode_jpeg(img, channels=3) # decode it
+	# img = tf.io.rgb_to_grayscale(img) # rgb 3 to gray 1
 	img = tf.image.resize(img, [224, 224]) # reshape for consistency
 	img = img / 255.0 # normalize from 0 - 1
 	return img, label
 
 def batch_Nnormal(shuffled_train, shuffled_test, shuffled_val):
-	batch_sz = 50
+	"""Applies splits to the processing for images (above) and batches results."""
+	batch = 16
+	# batch = 50
 	_train_data = shuffled_train.map(process_imgs)
-	train_data_ = _train_data.batch(batch_sz)
+	train_data_ = _train_data.batch(batch)
 
 	test_data_ = shuffled_test.map(process_imgs)
-	_test_data = test_data_.batch(batch_sz)
+	_test_data = test_data_.batch(batch)
 
 	val_data_ = shuffled_val.map(process_imgs)
-	_val_data = val_data_.batch(batch_sz)
+	_val_data = val_data_.batch(batch)
 
 	return train_data_, _test_data, _val_data
 
+def setup():
+	"""Collects and returns training, test, and validation data for the model."""
+	train, test, val = read_Nshuffle()
+	train_data, test_data, val_data = batch_Nnormal(train, test, val)
+
+	return train_data, test_data, val_data
+
 def design():
+	"""Define the model to train."""
 	model = tf.keras.Sequential([
-		# tf.keras.layers.Input(shape=(224, 224, 1)),
-		tf.keras.layers.Input(shape=(224, 224, 3)),
+		# tf.keras.layers.Input(shape=(224, 224, 1)), # grayscale reduction
+		tf.keras.layers.Input(shape=(224, 224, 3)), # RGB full_values
 
 		tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
 		tf.keras.layers.MaxPooling2D((2, 2)),
@@ -78,53 +92,157 @@ def design():
 
 		tf.keras.layers.Flatten(),
 
-		# tf.keras.layers.Dense(1024, activation='relu'),
-		# tf.keras.layers.Dropout(0.7),
-		tf.keras.layers.Dense(1024, activation='linear'),
-		tf.keras.layers.Dropout(0.2),
+		tf.keras.layers.Dense(1024, activation='relu'),
+		tf.keras.layers.Dropout(0.4),
+		# tf.keras.layers.Dense(512, activation='linear'),
+		# tf.keras.layers.Dropout(0.1),
 
-		tf.keras.layers.Dense(42, activation='linear')
+		tf.keras.layers.Dense(42), # [0,1]
+		tf.keras.layers.Reshape((21, 2))
 	])
 
 	return model
 
+def _compile(model):
+	"""Compile the model's optimizers, loss, & metrics."""
+	adaml = tf.keras.optimizers.legacy.Adam(learning_rate=1e-4)
+	adam = tf.keras.optimizers.legacy.Adam()
+	# adamw = tf.keras.optimizers.AdamW()
+
+	model.compile(
+		# optimizer=adam,
+		optimizer=tf.keras.optimizers.AdamW(),
+		# loss='mse',
+		# loss=mae_strux,
+		loss=tf.keras.losses.Huber(delta=10.0),
+		metrics=[mae_pxl]
+		# metrics=['mae']
+	)
+
+	return model
+
+def _train(model, _data):
+	"""Fit the model to the training and validation data.
+
+	Tests resulting model.
+	
+	Args:
+		model (keras): Tf model.
+		_data (tuple): Training, testing, and validation splits.
+	
+	Returns:
+		model (keras): TensorFlow model.
+		history (dict): Training results (loss, val_loss).
+		loss (float): Loss from testing.
+		mae (float): Mean average error from testing.
+	"""
+	train_data, val_data, test_data = _data
+	n_ep = 11
+	history = model.fit(
+		train_data,
+		epochs=n_ep, 
+		validation_data=(val_data),
+		verbose=1
+	)
+
+	loss, mae = model.evaluate(test_data)
+	print(f"test loss: {loss:.4f}; test mae_pxl: {mae:.4f}")
+
+	bureaucrat(model, history)
+
+	return loss, mae
+
 def main():
-	"""Trains a tf.keras.Sequential model on the given images & coordinate pairs."""
+	"""Compiles data, assembles model, and trains/tests it on the three data-splits."""
 	try:
-		train, test, val = read_Nshuffle()
-		train_data, test_data, val_data = batch_Nnormal(train, test, val)
+		_data = setup()
 
 		model = design()
+		model = _compile(model)
 
-		model.compile(
-			optimizer=tf.keras.optimizers.AdamW(),
-			# optimizer='adam',
-			# loss='mse',
-			loss=tf.keras.losses.Huber(delta=10.0),
-			metrics=['mae']
-		)
+		loss, mae = _train(model, _data)
 
-		n_ep = 7
-		history = model.fit(
-			train_data,
-			epochs=n_ep, 
-			validation_data=(val_data),
-			verbose=1
-		)
-
-		loss, mae = model.evaluate(test_data)
-
-		print(f"test loss: {loss:.4f}; test mae: {mae:.4f}")
-
-		# hist(history) # visualize
-		model.save("handModel_iv226k.keras")
-		record(history.history, model.optimizer.get_config()) # track
-	
 	except KeyboardInterrupt:
 		print("boss kill't it; shutter down")
 		sys.exit(0)
 
+def mae_pxl(y_true, y_pred):
+	"""Re-calculate error by un-normalizing pixel coordinates.
+	
+	Args:
+		y_true (float): Target value.
+		y_pred (float): Model's prediction.
+	
+	Returns:
+		adjusted (array): Adjusted weights to the custom key-pairs.
+	"""
+	adjusted = tf.reduce_mean(tf.abs(y_true - y_pred))*224.0
+	return adjusted
+
+def mae_strux(y_true, y_pred):
+	"""Applies the custom weights to the key-points of the model's prediction pairs.
+	
+	Args:
+		y_true (array): Target value.
+		y_pred (array): Model's prediction.
+	
+	Returns:
+		adjusted (array): Adjusted weights to the custom key-pairs.
+	"""
+	bump_weights = tf.constant([
+		2.0, # wrist 
+		2.0, 1.0, 1.0, 1.5, # thumb
+		2.0, 1.0, 1.0, 1.5, # index
+		1.5, 1.0, 1.0, 1.0, # middle
+		1.5, 1.0, 1.0, 1.0, # ring
+		1.5, 1.0, 1.0, 1.0, # pinky
+	]) # shape (21,)
+
+	sqr_err = tf.square(y_true - y_pred) # (batch, 21, 2) | square error
+	per_key_err = tf.reduce_mean(sqr_err, axis=-1) # (batch, 21) | average x & y per val
+
+	weighted_err = per_key_err * bump_weights # (batch, 21) @ (21,) | apply custom weights to errorsd
+	adjusted = tf.reduce_mean(weighted_err) # mean & reduce weighted errors
+
+	return adjusted
+
+def bureaucrat(model, history):
+	"""Records training results, model config, and model itself.
+
+	Optional matplotlib graph of training results.
+
+	Args:
+		test_data (array): Test inputs & targets.
+		history (dict): Training results (loss, val_loss).
+	
+	Returns:
+		None
+	"""
+	i = 31
+	name = f"handModel_i{i}k.keras"
+	lo = os.path.join(rent, name)
+
+	if os.path.exists(lo):
+		while True:
+			if not os.path.exists(lo):
+				break
+			i += 1
+			name = f"handModel_i{i}k.keras"
+			lo = os.path.join(rent, name)
+
+	model.save(name)
+	# hist(history) # visualize
+	record(history.history, model.optimizer.get_config())
+
 def hist(history):
+	"""Plot the model's training loss and val_loss + metrics from training.
+	
+	Args:
+		history (dict): Training history.
+	
+	Returns:
+		None
+	"""
 	acc = history.history['mae']
 	val_acc = history.history['val_mae']
 	loss = history.history['loss']
@@ -153,6 +271,7 @@ def hist(history):
 	plt.show()
 
 def record(history, config):
+	"""Write the training history and model config to a records file."""
 	record = "/Volumes/HomeXx/compuir/hands_ml/recorded_stats.md"
 
 	jshistory = json.dumps(history, indent=4, default=str)

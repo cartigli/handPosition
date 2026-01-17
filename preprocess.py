@@ -16,21 +16,19 @@ import matplotlib.image as mpimg
 Writes formatted and split training, testing, and validation data to "./data".
 """
 
-dataSource = "/Volumes/HomeXx/compuir/hands_ml/FreiHAND_pub_v2"
+dataSource = "/Volumes/HomeXx/compuir/hands_ml/data/FreiHAND_pub_v2"
 
 def targs():
 	"""Finds the target's coordinate values."""
-	# targets = pd.read_json("/Volumes/HomeXx/compuir/hands_ml/data_noScale/FreiHAND_pub_v2/training_xyz.json")
 	target = "training_xyz.json"
 	source = os.path.join(dataSource, target)
-	targets = pd.read_json(source)
-	y_ = np.array(targets.values.tolist())
+	y_s = pd.read_json(source)
+	targets = np.array(y_s.values.tolist())
 
-	return y_
+	return targets
 
 def vals():
 	"""Finds the images' extraneous data."""
-	# angles = pd.read_json("/Volumes/HomeXx/compuir/hands_ml/data_noScale/FreiHAND_pub_v2/training_K.json")
 	target = "training_K.json"
 	source = os.path.join(dataSource, target)
 	angles = pd.read_json(source)
@@ -39,36 +37,18 @@ def vals():
 
 def fimgs():
 	"""Finds the images available."""
-	# images_dir = "/Volumes/HomeXx/compuir/hands_ml/data_noScale/FreiHAND_pub_v2/training/rgb"
-	target = "training/rgb"
-	source = os.path.join(dataSource, target)
-
-	imgns = 0
+	source = os.path.join(dataSource, "training/rgb")
 	imgs = []
 
 	for obj in os.scandir(source):
 		if obj.is_file():
 			root, ext = os.path.splitext(obj.path)
-			# if ext in (".png", ".jpeg", ".jpg"):
 			if ext in (".jpg"):
 				imgs.append(obj.path)
-				imgns += 1
-
-	print(f"{imgns} images")
-
 	imgs.sort()
-	t_imgs = imgs[:32560]
 
-	return t_imgs
-
-def apply(xyz, K):
-	"""Applies focal point, perspective K to coordinate pairs x, y, and z."""
-	xyzT = xyz.T # (21x3) -> (3x21)
-	xy = np.matmul(K, xyzT).T # (3x3)*(3x21) = (3x21)
-
-	cpairs = xy[:,:2] / xy[:,2:] # x/z, y/z
-
-	return cpairs.flatten()
+	return imgs[32560:65120]
+	# return imgs[:32560]
 
 def apply2(xyz, K):
 	"""Applies focal point, perspective K to coordinate pairs x, y, and z."""
@@ -79,9 +59,11 @@ def apply2(xyz, K):
 
 		cpairs = xy[:,:2] / xy[:,2:] # x/z, y/z
 
-		pairs.append(cpairs.flatten())
-	
-	return np.array(pairs) / 224.0
+		# pairs.append(cpairs.flatten()) # reshape for as inputs
+		pairs.append(cpairs)
+		# ^comment this out for the custom weight matrix
+
+	return np.array(pairs) / 224.0 # normalize 0 - 1
 
 def collect():
 	"""Assembles the training data and targets."""
@@ -90,22 +72,21 @@ def collect():
 	t_imgs = fimgs() # training image files
 	K = vals() # focal point & camera weights
 
-	assert len(t_imgs) == len(y_), f"data misaligned {len(t_imgs)}:{len(y_)}" # sanity
+	# sanity
+	assert len(t_imgs) == len(y_), f"data misaligned {len(t_imgs)}:{len(y_)}"
+
 	return y_, t_imgs, K
 
 def format():
 	"""Writes training, testing, and validation datasets to the disk."""
 	y_, t_imgs, K = collect()
 
-	# cpairs = np.array([apply(y_[i], K[i]) for i in range(len(y_))])
 	targets = apply2(y_, K)
 
-	xtrain, xtest, ytrain, ytest = train_test_split(t_imgs, targets, test_size=0.3, random_state=42)
+	xtrain, xtest, ytrain, ytest = train_test_split(t_imgs, targets, test_size=0.1, random_state=42)
 	xtest, xval, ytest, yval = train_test_split(xtest, ytest, test_size=0.5, random_state=42)
 
-	# dump = "/Volumes/HomeXx/compuir/hands_ml/FreiHAND_pub_v2/preprocessed.npz"
-	# np.savez_compressed(dump,
-	np.savez_compressed(os.path.join(dataSource, "preprocessed.npz"),
+	np.savez_compressed(os.path.join(os.path.dirname(dataSource), "preprocessed0.npz"),
 		xtrain=xtrain, ytrain=ytrain, 
 		xtest=xtest, ytest=ytest,
 		xval=xval, yval=yval
