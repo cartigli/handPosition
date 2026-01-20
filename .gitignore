@@ -1,11 +1,13 @@
-*.keras
 /name
-*.mp4
 /FreiHAND_pub_v2
 /.vscode
 /xKeras
-recorded_stats.md
 /outputs
 /outputs/inputs
 /data
 /xKeras
+
+recorded_stats.md
+
+*.mp4
+*.keras

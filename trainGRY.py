@@ -12,7 +12,7 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 from tensorflow.keras import layers, mixed_precision
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from tensorflow.keras.layers import Conv2D, Concatenate, GlobalAveragePooling2D, Dense, Reshape, Multiply, Dropout
+from tensorflow.keras.layers import Conv2D, Concatenate, GlobalAveragePooling2D, Dense, Reshape, Multiply
 
 
 """
@@ -39,6 +39,16 @@ class Stream:
 		for stream in self.streams:
 			stream.flush()
 
+# # example
+# with open("index.html", "w") as index_output:
+# 	strm = Stream(sys.stdout, sys.stderr, index_output)
+
+# 	with contextlib.redirect_stdout(strm), contextlib.redirect_stderr(strm):
+# 		history = model.fit(xTrain, yTrain, epochs=10)
+
+# simplest possible implementation
+# sys.stdout = sys.stderr = open("testOutput.txt", "w")
+
 def postProcess():
 	"""Splits and shuffles training data into train, test, and validation sets."""
 	with np.load(os.path.join(rent, "data", "preprocessed1.npz")) as data:
@@ -55,11 +65,12 @@ def postProcess():
 def process_imgs(t_img, label):
 	"""Reads image files and passes them straight to the model."""
 	img = tf.io.read_file(t_img) # read the image's contents
-	img = tf.io.decode_jpeg(img, channels=3) # RGB (=3)
 
-	# img = tf.image.rgb_to_grayscale(img) # GRAYSCALE
+	img = tf.io.decode_jpeg(img, channels=3) # RGB (=3)
+	img = tf.image.rgb_to_grayscale(img) # GRAYSCALE
+
 	img = tf.image.resize(img, [224, 224]) # reshape for consistency
-	img = img / 255.0 # normalize 0 - 1
+	img = img / 255.0 # normalize over 0 - 1
 
 	return img, label
 
@@ -69,17 +80,14 @@ def shuffle_Nmap(training, testing, validating):
 	io_tune = tf.data.AUTOTUNE
 
 	mapped_train_data = training.map(process_imgs, num_parallel_calls=io_tune)
-	shuffled_train_data = mapped_train_data.shuffle(buffer_size=10000)
-	# shuffled_train_data = mapped_train_data.cache().shuffle(buffer_size=10000)
+	shuffled_train_data = mapped_train_data.cache().shuffle(buffer_size=10000)
 	train_targets = shuffled_train_data.batch(batch).prefetch(io_tune)
 
 	mapped_test_data = testing.map(process_imgs, num_parallel_calls=io_tune)
-	test_targets = mapped_test_data.batch(batch).prefetch(io_tune)
-	# test_targets = mapped_test_data.cache().batch(batch).prefetch(io_tune)
+	test_targets = mapped_test_data.cache().batch(batch).prefetch(io_tune)
 
 	mapped_val_data = validating.map(process_imgs, num_parallel_calls=io_tune)
-	shuffled_val_data = mapped_val_data.shuffle(buffer_size=10000)
-	# shuffled_val_data = mapped_val_data.cache().shuffle(buffer_size=10000)
+	shuffled_val_data = mapped_val_data.cache().shuffle(buffer_size=10000)
 	val_targets = shuffled_val_data.batch(batch).prefetch(io_tune)
 
 	return train_targets, test_targets, val_targets
@@ -87,47 +95,36 @@ def shuffle_Nmap(training, testing, validating):
 def setup():
 	"""Collects and returns training, test, and validation data for the model."""
 	training, testing, validating = postProcess()
-	return shuffle_Nmap(training, testing, validating)
+	train_targets, test_targets, val_targets = shuffle_Nmap(training, testing, validating)
+
+	return train_targets, test_targets, val_targets
 
 def design():
 	"""Define the model to train."""
-	# inputs = layers.Input(shape=(224, 224, 1)), # GRAYSCALE
-	inputs = layers.Input(shape=(224, 224, 3)) # RGB
+	inputs = layers.Input(shape=(224, 224, 1)), # GRAYSCALE
+	# inputs = layers.Input(shape=(224, 224, 3)) # RGB
 
 	x = layers.Conv2D(32, (3, 3), padding='same')(inputs)
 	x = layers.ReLU()(x)
-	x = cbam_block(x)
-	x = layers.Dropout(0.2)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(64, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
-	x = cbam_block(x)
-	x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(128, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
-	x = cbam_block(x)
-	x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(256, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
-	x = cbam_block(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
-	x = layers.Conv2D(512, (3, 3), padding='same')(x)
-	x = layers.ReLU()(x)
-	x = cbam_block(x)
-	x = layers.MaxPooling2D((2, 2))(x)
+	x = layers.GlobalAveragePooling2D()(x)
 
-	x = layers.Conv2D(1024, (3, 3), padding='same')(x)
-	x = layers.ReLU()(x)
-	x = cbam_block(x)
-	x = layers.MaxPooling2D((2, 2))(x)
-
-	x = layers.Flatten()(x)
+	# x = layers.Dense(256, kernel_initializer='he_normal')(x)
+	# x = layers.ReLU()(x)
+	# x = layers.Dropout(0.2)(x)
 
 	x = layers.Dense(42)(x)
 	outputs = layers.Reshape((21, 2))(x)
@@ -138,9 +135,9 @@ def _compile(model):
 	"""Compile the model's optimizers, loss, & metrics."""
 
 	model.compile(
-		optimizer=tf.keras.optimizers.Adam(learning_rate=0.0008),
-		loss='mae',
-		# loss=anatomical_loss,
+		optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=0.0001, global_clipnorm=1.0),
+		# loss='mae',
+		loss=strux_mae,
 		metrics=[pxl_mae]
 	)
 
@@ -156,9 +153,9 @@ def _train(model, train_targets, test_targets, val_targets):
 
 	history = model.fit(
 		train_targets,
-		epochs=12,
+		epochs=20,
 		validation_data=(val_targets),
-		# callbacks=[checkpoint],
+		# callbacks=[checkpoint, earlystop],
 		verbose=1
 	)
 	loss, mae = model.evaluate(test_targets)
@@ -167,7 +164,7 @@ def _train(model, train_targets, test_targets, val_targets):
 	return loss, mae
 
 def main():
-	"""Reads data, compiles model, trains, validates and tests on data splits."""
+	"""Compiles data, assembles model, and trains/tests it on the three data-splits."""
 	try:
 		train_targets, test_targets, val_targets = setup()
 
@@ -188,32 +185,29 @@ def cbam_block(x, ratio=16, kernel_size=7):
 	return x
 
 def channel_attention(x, ratio=16):
-	"""'Which channel features are valued/needed most from this input?'"""
+	"""'Which channel features are most informative for this input?'
+	
+	Squeeze Conv2D channels through a single channel to learn inner-working relationships.
+	"""
 	channels = x.shape[-1]
 	squeezed = GlobalAveragePooling2D()(x) # squeeze out one value per channel
 
-	# splits inputs channels by the ratio (16) and activate w.ReLU
-	excited = Dense(channels // ratio, activation='relu')(squeezed)
-	dropped = Dropout(0.1)(excited) # drop a few for overfitting
+	excited = Dense(channels // ratio, activation='relu')(squeezed) # learn channels' important weights
+	ratios = Dense(channels, activation='sigmoid')(excited) # sigmoid activation from 0 - 1
 
-	# activate the weights with sigmoid (0,1) for each weights' weight
-	ratios = Dense(channels, activation='sigmoid')(dropped)
-	reshaped = Reshape((1, 1, channels))(ratios)
-
-	# return result * inputs (for per-channel weighted attention)
-	return Multiply()([x, reshaped])
+	reshaped = Reshape((1, 1, channels))(ratios) # reshape and scale original features
+	return Multiply()([x, reshaped]) # return reshaped channels x (weights)
 
 def spatial_attention(x, kernel_size=7):
 	"""'Which spatial locations matter most?'"""
-	# compress channels over avg & max pooling.
+	# compress channel info via average & max_pooling.
 	avg_pool = tf.reduce_mean(x, axis=-1, keepdims=True)
 	max_pool = tf.reduce_max(x, axis=-1, keepdims=True)
 
-	# concatenate the pools
-	concat = Concatenate()([avg_pool, max_pool]) 
-
-	# convolve the sum over sigmoid (0,1) and return result * inputs
+	# concatenate the pools & convolve the result
+	concat = Concatenate()([avg_pool, max_pool])
 	attention = Conv2D(1, kernel_size, activation='sigmoid', padding='same')(concat)
+
 	return Multiply()([x, attention])
 
 def pxl_mae(y_true, y_pred):
@@ -276,15 +270,15 @@ def anatomical_loss(y_true, y_pred):
 	pred_lengths = tf.norm(pred_vectors, axis=-1) + 1e-6
 
 	# get the error in predictions
-	sym_err_ratio = tf.math.log(pred_lengths / (true_lengths + 1e-7))
+	sym_err_ratio = tf.math.log(pred_lengths / (true_lengths + 1e-6))
 	bone_loss = tf.reduce_mean(tf.abs(sym_err_ratio))
 
 	# impact/consideration of bone_position loss + mae
-	return mae + (bone_loss*1.0)
+	return mae + (bone_loss*0.1)
 
 def bureaucrat(model, history):
 	"""Records training results, model config, and model itself."""
-	i = 85
+	i = 31
 
 	base = "handModel"
 	dirname = base + f"_i{i}"

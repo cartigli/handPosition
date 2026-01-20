@@ -3,12 +3,14 @@ import time
 import random
 
 import cv2
-import tensorflow as tf
 import numpy as np
-from PIL import Image
+import tensorflow as tf
 import matplotlib.pyplot as plt
+from PIL import Image
 
-machine = "/Volumes/HomeXx/compuir/hands_ml/handModel_i36k.keras"
+
+i = 84
+machine = f"/Volumes/HomeXx/compuir/hands_ml/handModel_i{i}/handModel.keras"
 model = tf.keras.models.load_model(machine, compile=False)
 
 def data():
@@ -52,8 +54,16 @@ def plott(coords, img_display):
 
 def video():
     parent = "/Volumes/HomeXx/compuir/hands_ml/outputs"
-    vid = os.path.join(parent, "inputs", "hands_video3.MOV")
-    out = os.path.join(parent, "hands_pdx4.mp4")
+    vid = os.path.join(parent, "inputs", "hands_video2.MOV")
+    i = 10
+    out = os.path.join(parent, f"hands_pdx{i}.mp4")
+
+    if os.path.exists(out):
+        while True:
+            if not os.path.exists(out):
+                break
+            i += 1
+            out = os.path.join(parent, f"hands_pdx{i}.mp4")
 
     frcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out, frcc, 30, (224, 224))
@@ -66,7 +76,8 @@ def video():
         if not success:
             break
 
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # RGB
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAYSCALE) # GRAYSCALE
 
         img = cv2.resize(frame, (224, 224))
         img_norm = img / 255.0
@@ -80,14 +91,13 @@ def video():
         for x, y in coords: # coupled predictions
             cv2.circle(img, (int(x), int(y)), 2, (0, 0, 255), -1)
         
-        cimg = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        cimg = cv2.cvtColor(img, cv2.COLOR_RGB2BGR) # RGB
+        # cimg = cv2.cvtColor(img, cv2.COLOR_GRAYSCALE2BGR) # GRAYSCALE
+
         writer.write(cimg)
 
     writer.release()
     video.release()
 
-
-# def main():
 if __name__=="__main__":
-    # main()
     video()

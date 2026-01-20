@@ -13,29 +13,33 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
 """
-Writes formatted and split training, testing, and validation data to "./data".
+Writes formatted and split training, testing, and validation data."
 """
 
+SAMPLE_SIZE = 40
+
+dataTarget = "preprocessed9.npz" # json dump with training splits
 dataSource = "/Volumes/HomeXx/compuir/hands_ml/data/FreiHAND_pub_v2"
 
 def targs():
 	"""Finds the target's coordinate values."""
-	target = "training_xyz.json"
-	source = os.path.join(dataSource, target)
-	y_s = pd.read_json(source)
-	targets = np.array(y_s.values.tolist())
+	source = os.path.join(dataSource, "training_xyz.json")
 
-	return targets
+	with open(source, 'r') as f:
+		targets = json.load(f)
+
+	return np.array(targets)
 
 def vals():
-	"""Finds the images' extraneous data."""
-	target = "training_K.json"
-	source = os.path.join(dataSource, target)
-	angles = pd.read_json(source)
-	angles = np.array(angles.values.tolist())
-	return angles
+	"""Finds the images' camera's metadata."""
+	source = os.path.join(dataSource, "training_K.json")
 
-def fimgs():
+	with open(source, 'r') as f:
+		angles = json.load(f)
+
+	return np.array(angles)
+
+def fimgs(beg, end):
 	"""Finds the images available."""
 	source = os.path.join(dataSource, "training/rgb")
 	imgs = []
@@ -43,12 +47,11 @@ def fimgs():
 	for obj in os.scandir(source):
 		if obj.is_file():
 			root, ext = os.path.splitext(obj.path)
-			if ext in (".jpg"):
+			if ext in (".jpg", ".png"):
 				imgs.append(obj.path)
 	imgs.sort()
 
-	return imgs[32560:65120]
-	# return imgs[:32560]
+	return imgs[beg:end]
 
 def apply2(xyz, K):
 	"""Applies focal point, perspective K to coordinate pairs x, y, and z."""
@@ -69,8 +72,22 @@ def collect():
 	"""Assembles the training data and targets."""
 	y_ = targs() # target coordinate pairs
 
-	t_imgs = fimgs() # training image files
+	t_imgs = fimgs(beg=32560, end=65120) # training image files
 	K = vals() # focal point & camera weights
+
+	# sanity
+	assert len(t_imgs) == len(y_), f"data misaligned {len(t_imgs)}:{len(y_)}"
+
+	return y_, t_imgs, K
+
+def collectMini():
+	"""Assembles the training data and targets."""
+	y_ = targs()[:SAMPLE_SIZE]
+
+	beg = 32560 
+	end = beg + SAMPLE_SIZE
+	t_imgs = fimgs(beg, end)
+	K = vals()[:SAMPLE_SIZE]
 
 	# sanity
 	assert len(t_imgs) == len(y_), f"data misaligned {len(t_imgs)}:{len(y_)}"
@@ -79,44 +96,67 @@ def collect():
 
 def format():
 	"""Writes training, testing, and validation datasets to the disk."""
-	y_, t_imgs, K = collect()
+	xyz, t_imgs, K = collect()
+	targets = apply2(xyz, K)
 
-	targets = apply2(y_, K)
+	xtrain, xtest, ytrain, ytest = train_test_split(
+		t_imgs,
+		targets,
+		test_size=0.1, # 90% train
+		random_state=42
+	)
 
-	xtrain, xtest, ytrain, ytest = train_test_split(t_imgs, targets, test_size=0.1, random_state=42)
-	xtest, xval, ytest, yval = train_test_split(xtest, ytest, test_size=0.5, random_state=42)
+	xtest, xval, ytest, yval = train_test_split(
+		xtest,
+		ytest,
+		test_size=0.5, # 10% val/test
+		random_state=42
+	)
 
-	np.savez_compressed(os.path.join(os.path.dirname(dataSource), "preprocessed0.npz"),
-		xtrain=xtrain, ytrain=ytrain, 
+	np.savez_compressed(
+		os.path.join(
+			os.path.dirname(dataSource), 
+			dataTarget
+		),
+		xtrain=xtrain, ytrain=ytrain,
 		xtest=xtest, ytest=ytest,
 		xval=xval, yval=yval
 	)
 
-def find_missing():
-	target = "training/rgb"
-	source = os.path.join(dataSource, target)
 
-	for i in range(32560):
-		if i < 10:
-			f = "0000000" + f"{i}.jpg"
-		elif i < 100:
-			f = "000000" + f"{i}.jpg"
-		elif i < 1000:
-			f = "00000" + f"{i}.jpg"
-		elif i < 10000:
-			f = "0000" + f"{i}.jpg"
-		elif i < 100000:
-			f = "000" + f"{i}.jpg"
-		
-		ff = os.path.join(source, f)
-		
-		if not os.path.exists(ff):
-			print(f"{f} is shot")
+def formatMini():
+	"""Writes training, testing, and validation datasets to the disk."""
+	xyz, t_imgs, K = collectMini()
+	targets = apply2(xyz, K)
+
+	xtrain, xtest, ytrain, ytest = train_test_split(
+		t_imgs,
+		targets,
+		test_size=0.2, # 90% train
+		random_state=42
+	)
+
+	xtest, xval, ytest, yval = train_test_split(
+		xtest,
+		ytest,
+		test_size=0.5, # 10% val/test
+		random_state=42
+	)
+
+	np.savez_compressed(
+		os.path.join(
+			os.path.dirname(dataSource), 
+			dataTarget
+		),
+		xtrain=xtrain, ytrain=ytrain,
+		xtest=xtest, ytest=ytest,
+		xval=xval, yval=yval
+	)
 
 def main():
 	"""Writes training, testing, and validation datasets to the disk."""
-	format()
-	# find_missing()
+	formatMini()
+	# format()
 
 if __name__=="__main__":
 	main()
