@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 
-i = 84
+i = 89
 machine = f"/Volumes/HomeXx/compuir/hands_ml/handModel_i{i}/handModel.keras"
 model = tf.keras.models.load_model(machine, compile=False)
 
@@ -45,6 +45,7 @@ def plott(coords, img_display):
 
     # for i in range(0, len(coords), 2): # flat predictions
         # x, y = coords[i], coords[i+1]
+
     for i, (x, y) in enumerate(coords): # coupled predictions
         plt.plot(x, y, 'ro', markersize=8)
         plt.annotate(f'{i//2}', (x, y), color='white', fontsize=10)
@@ -88,6 +89,7 @@ def video():
 
         # for i in range(0, len(coords), 2): # flat predictions
         #     x, y = coords[i], coords[i+1]
+
         for x, y in coords: # coupled predictions
             cv2.circle(img, (int(x), int(y)), 2, (0, 0, 255), -1)
         

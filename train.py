@@ -69,17 +69,17 @@ def shuffle_Nmap(training, testing, validating):
 	io_tune = tf.data.AUTOTUNE
 
 	mapped_train_data = training.map(process_imgs, num_parallel_calls=io_tune)
-	shuffled_train_data = mapped_train_data.shuffle(buffer_size=10000)
-	# shuffled_train_data = mapped_train_data.cache().shuffle(buffer_size=10000)
+	# shuffled_train_data = mapped_train_data.shuffle(buffer_size=10000)
+	shuffled_train_data = mapped_train_data.cache().shuffle(buffer_size=10000)
 	train_targets = shuffled_train_data.batch(batch).prefetch(io_tune)
 
 	mapped_test_data = testing.map(process_imgs, num_parallel_calls=io_tune)
-	test_targets = mapped_test_data.batch(batch).prefetch(io_tune)
-	# test_targets = mapped_test_data.cache().batch(batch).prefetch(io_tune)
+	# test_targets = mapped_test_data.batch(batch).prefetch(io_tune)
+	test_targets = mapped_test_data.cache().batch(batch).prefetch(io_tune)
 
 	mapped_val_data = validating.map(process_imgs, num_parallel_calls=io_tune)
-	shuffled_val_data = mapped_val_data.shuffle(buffer_size=10000)
-	# shuffled_val_data = mapped_val_data.cache().shuffle(buffer_size=10000)
+	# shuffled_val_data = mapped_val_data.shuffle(buffer_size=10000)
+	shuffled_val_data = mapped_val_data.cache().shuffle(buffer_size=10000)
 	val_targets = shuffled_val_data.batch(batch).prefetch(io_tune)
 
 	return train_targets, test_targets, val_targets
@@ -91,13 +91,12 @@ def setup():
 
 def design():
 	"""Define the model to train."""
-	# inputs = layers.Input(shape=(224, 224, 1)), # GRAYSCALE
-	inputs = layers.Input(shape=(224, 224, 3)) # RGB
+	inputs = layers.Input(shape=(224, 224, 3))
 
 	x = layers.Conv2D(32, (3, 3), padding='same')(inputs)
 	x = layers.ReLU()(x)
 	x = cbam_block(x)
-	x = layers.Dropout(0.2)(x)
+	x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(64, (3, 3), padding='same')(x)
@@ -109,22 +108,25 @@ def design():
 	x = layers.Conv2D(128, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
 	x = cbam_block(x)
-	x = layers.Dropout(0.1)(x)
+	# x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(256, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
 	x = cbam_block(x)
+	# x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(512, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
 	x = cbam_block(x)
+	# x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Conv2D(1024, (3, 3), padding='same')(x)
 	x = layers.ReLU()(x)
 	x = cbam_block(x)
+	# x = layers.Dropout(0.1)(x)
 	x = layers.MaxPooling2D((2, 2))(x)
 
 	x = layers.Flatten()(x)
@@ -138,8 +140,9 @@ def _compile(model):
 	"""Compile the model's optimizers, loss, & metrics."""
 
 	model.compile(
-		optimizer=tf.keras.optimizers.Adam(learning_rate=0.0008),
-		loss='mae',
+		optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=0.0008, global_clipnorm=1.0),
+		# loss='mae',
+		loss='mse',
 		# loss=anatomical_loss,
 		metrics=[pxl_mae]
 	)
@@ -156,9 +159,9 @@ def _train(model, train_targets, test_targets, val_targets):
 
 	history = model.fit(
 		train_targets,
-		epochs=12,
+		epochs=14,
 		validation_data=(val_targets),
-		# callbacks=[checkpoint],
+		# callbacks=[checkpoint, earlystop],
 		verbose=1
 	)
 	loss, mae = model.evaluate(test_targets)
@@ -189,7 +192,7 @@ def cbam_block(x, ratio=16, kernel_size=7):
 
 def channel_attention(x, ratio=16):
 	"""'Which channel features are valued/needed most from this input?'"""
-	channels = x.shape[-1]
+	channels = x.shape[-1] # (h*w*channels)[-1] = channels
 	squeezed = GlobalAveragePooling2D()(x) # squeeze out one value per channel
 
 	# splits inputs channels by the ratio (16) and activate w.ReLU
@@ -200,8 +203,7 @@ def channel_attention(x, ratio=16):
 	ratios = Dense(channels, activation='sigmoid')(dropped)
 	reshaped = Reshape((1, 1, channels))(ratios)
 
-	# return result * inputs (for per-channel weighted attention)
-	return Multiply()([x, reshaped])
+	return Multiply()([x, reshaped]) # per-channel weighted attention
 
 def spatial_attention(x, kernel_size=7):
 	"""'Which spatial locations matter most?'"""
@@ -210,7 +212,7 @@ def spatial_attention(x, kernel_size=7):
 	max_pool = tf.reduce_max(x, axis=-1, keepdims=True)
 
 	# concatenate the pools
-	concat = Concatenate()([avg_pool, max_pool]) 
+	concat = Concatenate()([avg_pool, max_pool])
 
 	# convolve the sum over sigmoid (0,1) and return result * inputs
 	attention = Conv2D(1, kernel_size, activation='sigmoid', padding='same')(concat)

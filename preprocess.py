@@ -16,7 +16,7 @@ import matplotlib.image as mpimg
 Writes formatted and split training, testing, and validation data."
 """
 
-SAMPLE_SIZE = 40
+BRUTE_FORCE_TEST_SIZE = 40
 
 dataTarget = "preprocessed9.npz" # json dump with training splits
 dataSource = "/Volumes/HomeXx/compuir/hands_ml/data/FreiHAND_pub_v2"
@@ -82,12 +82,12 @@ def collect():
 
 def collectMini():
 	"""Assembles the training data and targets."""
-	y_ = targs()[:SAMPLE_SIZE]
+	y_ = targs()[:BRUTE_FORCE_TEST_SIZE]
 
 	beg = 32560 
-	end = beg + SAMPLE_SIZE
+	end = beg + BRUTE_FORCE_TEST_SIZE
 	t_imgs = fimgs(beg, end)
-	K = vals()[:SAMPLE_SIZE]
+	K = vals()[:BRUTE_FORCE_TEST_SIZE]
 
 	# sanity
 	assert len(t_imgs) == len(y_), f"data misaligned {len(t_imgs)}:{len(y_)}"
@@ -155,8 +155,8 @@ def formatMini():
 
 def main():
 	"""Writes training, testing, and validation datasets to the disk."""
-	formatMini()
-	# format()
+	# formatMini()
+	format()
 
 if __name__=="__main__":
 	main()
